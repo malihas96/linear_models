@@ -1,0 +1,87 @@
+---
+title: "Linear_Models"
+author: "Maliha Safdar"
+date: "2025-11-06"
+output: github_document
+---
+
+```{r}
+library(tidyverse)
+library(p8105.datasets)
+
+set.seed(1)
+```
+
+## Model fitting 
+
+The code below loads and cleans the Airbnb data, which we’ll use as a primary example for fitting linear models.
+
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb |> 
+  mutate(stars = review_scores_location / 2) |> 
+  rename(
+    borough = neighbourhood_group,
+    neighborhood = neighbourhood) |> 
+  filter(borough != "Staten Island") |> 
+  select(price, stars, borough, neighborhood, room_type)
+```
+
+
+A good place to start is to consider price as an outcome that may depend on rating and borough. We fit that initial model in the following code.
+
+```{r}
+fit = lm(price ~ stars + borough, data = nyc_airbnb)
+```
+
+The lm function begins with the formula specification – outcome on the left of the ~ and predictors separated by + on the right. As we’ll see shortly, interactions between variables can be specified using *. You can also specify an intercept-only model (outcome ~ 1), a model with no intercept (outcome ~ 0 + ...), and a model using all available predictors (outcome ~ .).
+
+R will treat categorical (factor) covariates appropriately and predictably: indicator variables are created for each non-reference category and included in your model, and the factor level is treated as the reference. As with ggplot, being careful with factors is therefore critical!
+
+```{r}
+nyc_airbnb = 
+  nyc_airbnb |> 
+  mutate(
+    borough = fct_infreq(borough), ## fct_infreq says putting categories in orders of how frequently they appear in the data for example if Manhattan appears the most it is #1 on the factor, then if Brooklyn is the second most that appears it is given #2 and so on.
+    room_type = fct_infreq(room_type))
+
+fit = lm(price ~ stars + borough, data = nyc_airbnb)
+```
+
+It’s important to note that changing reference categories won’t change “fit” or statistical sigificance, but can affect ease of interpretation.
+
+## Tidying output
+The output of a lm is an object of class lm – a very specific list that isn’t a dataframe but that can be manipulated using other functions. Some common functions for interacting with lm fits are below, although we omit the output.
+
+```{r, eval = FALSE}
+summary(fit)
+names(summary(fit))
+summary(fit)$coef
+coef(fit)
+fitted.values(fit)
+summary(fit)[["df"]]
+```
+
+The reason that we omit the output is that it’s a huge pain to deal with. summary produces an object of class summary.lm, which is also a list – that’s how we extracted the coefficients using summary(fit)$coef. coef produces a vector of coefficient values, and fitted.values is a vector of fitted values. None of this is tidy.
+
+It’s helpful to know about the products of lm and to know there are a range of ways to interact with models in base R. That said, for the most part it’s easiest to use tidy tools.
+
+The broom package has functions for obtaining a quick summary of the model and for cleaning up the coefficient table.
+
+```{r}
+fit |>
+  broom :: tidy() |>
+  mutate(
+    term = str_replace(term, "borough", "Bourough:")
+  ) |>
+  select(term, estimate, p.value) |>
+  knitr::kable(digits = 3)
+
+fit |>
+  broom :: glance()
+
+
+```
+

@@ -91,7 +91,9 @@ We should also do a quick check to see if this is working.
 boot_sample(sim_df_nonconst) |> 
   ggplot(aes(x = x, y = y)) + 
   geom_point(alpha = .5) +
-  stat_smooth(method = "lm")
+  stat_smooth(method = "lm") +
+  xlim(c(-2,4)) +
+  ylim(c(-5,16))
 ```
 
 
@@ -104,12 +106,13 @@ We’re going to draw repeated samples with replacement, and then analyze each o
 
 Let’s give that a try:
 
+
 ```{r}
 boot_straps = 
   tibble(strap_number = 1:1000) |> 
   mutate(
     strap_sample = map(strap_number, \(i) boot_sample(df = sim_df_nonconst))
-  )
+  ) # the (i) does not show up anywhere in the sample
 
 boot_straps
 ```
@@ -147,7 +150,7 @@ To do that, I’ll use the analytic pipeline we established when looking at nest
 
 ```{r}
 bootstrap_results = 
-  boot_straps |> 
+  boot_straps |>  #fitting a different linear model for each bootstrap sample
   mutate(
     models = map(strap_sample, \(df) lm(y ~ x, data = df) ),
     results = map(models, broom::tidy)) |> 
@@ -175,6 +178,7 @@ bootstrap_results |>
 For a simple linear regression, we can show the fitted lines for each bootstrap sample to build intuition for these results.
 
 ```{r}
+
 boot_straps |> 
   unnest(strap_sample) |> 
   ggplot(aes(x = x, y = y)) + 
@@ -189,6 +193,8 @@ boot_straps |>
 Bootstrapping is common enough that it’s been automated, to some degree, in the modelr::boostrap function. This function makes it easy to draw bootstrap samples, and stores them in a mostly-helpful way – as a resample object that can be converted to and treated like a data frame. (This keeps you from having to actually store 1000 dataframes, and saves a lot of memory on your computer.)
 
 ```{r}
+
+
 boot_straps = 
   sim_df_nonconst |> 
   modelr::bootstrap(n = 1000)
@@ -218,4 +224,45 @@ sim_df_nonconst |>
 The results are the same (up to resampling variability), and the code to get here is pretty clean.
 
 Also, check this out – to bootstrap the dataset with constant error variance, we only have to change the input dataframe!
+
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb |>
+  mutate(stars = review_scores_location /2) |>
+  rename(
+    borough = neighbourhood_group
+  ) |>
+  filter (
+    borough != "Staten Island"
+  ) |>
+  drop_na(price, stars, room_type) |>
+  select(price, stars, room_type, borough)
+
+nyc_airbnb |>
+  ggplot(aes(x = stars, y = price, color, room_type)) +
+  geom_point(alpha = 0.5)
+```
+
+
+
+Try to d bootstrap
+
+```{r}
+airbnb_bootstrap_results = 
+  nyc_airbnb |>
+  filter( borough == "Manhattan") |>
+  modelr::bootstrap( n =10) |>
+  mutate(
+    df = map(strap, as_tibble),
+    fits = map(df,\(df) lm (price ~ stars + room_type, data = df)),
+    results = map(fits, broom :: tidy)
+  ) |>
+  select(.id, results) |>
+  unnest(results) |>
+  filter(term == "stars") |> 
+  ggplot(aes(x = estimate)) + 
+  geom_density()
+```
 

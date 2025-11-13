@@ -151,7 +151,9 @@ We should also do a quick check to see if this is working.
 boot_sample(sim_df_nonconst) |> 
   ggplot(aes(x = x, y = y)) + 
   geom_point(alpha = .5) +
-  stat_smooth(method = "lm")
+  stat_smooth(method = "lm") +
+  xlim(c(-2,4)) +
+  ylim(c(-5,16))
 ```
 
     ## `geom_smooth()` using formula = 'y ~ x'
@@ -177,7 +179,7 @@ boot_straps =
   tibble(strap_number = 1:1000) |> 
   mutate(
     strap_sample = map(strap_number, \(i) boot_sample(df = sim_df_nonconst))
-  )
+  ) # the (i) does not show up anywhere in the sample
 
 boot_straps
 ```
@@ -291,7 +293,7 @@ coefficients.
 
 ``` r
 bootstrap_results = 
-  boot_straps |> 
+  boot_straps |>  #fitting a different linear model for each bootstrap sample
   mutate(
     models = map(strap_sample, \(df) lm(y ~ x, data = df) ),
     results = map(models, broom::tidy)) |> 
@@ -413,3 +415,46 @@ get here is pretty clean.
 
 Also, check this out – to bootstrap the dataset with constant error
 variance, we only have to change the input dataframe!
+
+``` r
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb |>
+  mutate(stars = review_scores_location /2) |>
+  rename(
+    borough = neighbourhood_group
+  ) |>
+  filter (
+    borough != "Staten Island"
+  ) |>
+  drop_na(price, stars, room_type) |>
+  select(price, stars, room_type, borough)
+
+nyc_airbnb |>
+  ggplot(aes(x = stars, y = price, color, room_type)) +
+  geom_point(alpha = 0.5)
+```
+
+    ## Warning: Duplicated aesthetics after name standardisation:
+
+![](Bootstrapping_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
+
+Try to d bootstrap
+
+``` r
+airbnb_bootstrap_results = 
+  nyc_airbnb |>
+  filter( borough == "Manhattan") |>
+  modelr::bootstrap( n =10) |>
+  mutate(
+    df = map(strap, as_tibble),
+    fits = map(df,\(df) lm (price ~ stars + room_type, data = df)),
+    results = map(fits, broom :: tidy)
+  ) |>
+  select(.id, results) |>
+  unnest(results) |>
+  filter(term == "stars") |> 
+  ggplot(aes(x = estimate)) + 
+  geom_density()
+```

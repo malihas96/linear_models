@@ -8,7 +8,7 @@ output: github_document
 ```{r}
 library(tidyverse)
 library(p8105.datasets)
-
+library(modelr)
 set.seed(1)
 ```
 
@@ -82,6 +82,172 @@ fit |>
 fit |>
   broom :: glance()
 
+```
 
+## Diagnostics
+
+```{r}
+
+modelr::add_residuals(nyc_airbnb,fit) |> 
+modelr::add_predictions(nyc_airbnb, fit) |>
+  filter(resid <1000) |>
+  ggplot(aes(x = resid)) +
+  geom_histogram()
+
+
+modelr::add_residuals(nyc_airbnb, fit) |> 
+modelr::add_predictions(nyc_airbnb, fit) |>
+  filter(resid <1000) |>
+  ggplot(aes(x = borough, y = resid)) +
+  geom_violin()
+
+
+modelr::add_residuals(nyc_airbnb, fit) |> 
+modelr::add_predictions(nyc_airbnb, fit) |>
+  filter(resid <1000) |>
+  ggplot(aes(x = starts, y = resid)) +
+  geom_point()
+
+```
+
+## Hypothesis Testing
+
+
+We’ll comment briefly on hypothesis testing. Model summaries include results of t-tests for single coefficients, and are the standard way of assessing statistical significance.
+
+Testing multiple coefficients is somewhat more complicated. A useful approach is to use nested models, meaning that the terms in a simple “null” model are a subset of the terms in a more complex “alternative” model. The are formal tests for comparing the null and alternative models, even when several coefficients are added in the alternative model. Tests of this kind are required to assess the significance of a categorical predictor with more than two levels, as in the example below.
+
+```{r}
+fit_null = lm(price ~ stars + borough, data = nyc_airbnb)
+fit_alt = lm(price ~ stars + borough + room_type, data = nyc_airbnb)
+
+anova(fit_null, fit_alt) |>
+  broom :: tidy()
+```
+
+## Interactions vs nested data
+
+
+```{r}
+fit_interactions = 
+  lm(price ~ stars * borough + room_type * borough, data = nyc_airbnb)
+
+fit_interactions |>
+  broom :: tidy()
+```
+
+
+Let's look at Brooklyn first
+```{r}
+nyc_airbnb |>
+  filter(borough == "Brooklyn") |>
+  lm(price ~ stars + room_type, data = _) |> #"_" for data, the first dataframe, tells the pipe that _ is a place holder 
+  broom :: tidy() #the output is just for Brooklyn
+
+nyc_airbnb |>
+  filter(borough == "Manhattan") |>
+  lm(price ~ stars + room_type, data = _) |> #"_" for data, the first dataframe, tells the pipe that _ is a place holder 
+  broom :: tidy() #the output is just for Manhattan
+
+
+nyc_airbnb |>
+  filter(borough == "Bronx") |>
+  lm(price ~ stars + room_type, data = _) |> #"_" for data, the first dataframe, tells the pipe that _ is a place holder 
+  broom :: tidy() #the output is just for Bronx
+
+nyc_airbnb |>
+  filter(borough == "Queens") |>
+  lm(price ~ stars + room_type, data = _) |> #"_" for data, the first dataframe, tells the pipe that _ is a place holder 
+  broom :: tidy() #the output is just for Queens
+
+
+#We want something that will not have us copy and paste the code for each borough
+```
+
+Write a short function
+
+```{r}
+lm_airbnb = function(df) {
+  lm(price ~ stars + room_type, data = df)
+}
+
+nyc_airbnb |>
+  filter(borough == "Queens") |>
+  lm_airbnb() |>
+  broom ::tidy()
+```
+
+
+
+Create a list of dataframes, and iterate to fit the model each time.
+
+```{r}
+nested_lm_results = nyc_airbnb |>
+  nest(data = - borough) |>
+  mutate(
+    fits = map(data, lm_airbnb),
+    results = map(fits, broom :: tidy)
+  ) |>
+  select(borough, results) |>
+  unnest(results)
+
+```
+
+DO some untidying
+
+```{r}
+nested_lm_results |>
+  select(borough, term, estimate) |>
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  )
+```
+
+Use an *anonymous* function instead of `lm_airbnb`
+
+
+```{r}
+nested_lm_results = nyc_airbnb |>
+  nest(data = - borough) |>
+  mutate(
+    fits = map(data, \(df) lm(price ~ stars + room_type, data = df)),
+    results = map(fits, broom :: tidy)
+  ) |>
+  select(borough, results) |>
+  unnest(results)
+
+```
+
+
+Let's do an even more extreme example
+
+```{r}
+manhattan_analysis =
+  nyc_airbnb |>
+  filter(
+    borough == "Manhattan"
+  ) |>
+  nest(data = -neighborhood) |>
+  mutate(
+    fits = map(data, \(df) lm(price ~ stars + room_type, data = df)),
+    results = map(fits, broom :: tidy)
+  ) |>
+  select(neighborhood, results) |>
+  unnest(results)
+```
+
+
+Make a plot:
+
+```{r}
+manhattan_analysis |>
+  filter(term == "stars") |>
+  mutate(
+    neighborhood = fct_reorder(neighborhood, estimate)
+  ) |>
+  ggplot(aes(x = neighborhood, y = estimate)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
